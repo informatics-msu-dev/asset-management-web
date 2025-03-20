@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* src/index.css หรือไฟล์ CSS หลัก */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap');
+
+body {
+    font-family: 'Noto Sans Thai', sans-serif;
+}
+
+@keyframes loadBar {
+  0% {
+    width: 0;
+    margin-left: 0;
+  }
+  50% {
+    width: 100%;
+    margin-left: 0;
+  }
+  100% {
+    width: 0;
+    margin-left: 100%;
+  }
+}
+
+.animate-load-bar {
+  animation: loadBar 1.5s infinite ease-in-out;
+}
