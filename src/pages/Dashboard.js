@@ -3,19 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import { ref, onValue } from "firebase/database";
 import { db } from "../firebase";
 import { ChartArea, Archive, LogOut, XCircle, Package, UserCogIcon } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, LabelList } from "recharts";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 
 const Dashboard = () => {
     const [repairRequests, setRepairRequests] = useState([]);
-    const [topics, setTopics] = useState({}); // Mapping รหัสหัวเรื่อง -> ชื่อหัวเรื่อง
+    const [topics, setTopics] = useState({});
+    const [users, setUsers] = useState({});
     const [selectedTopicId, setSelectedTopicId] = useState(null);
     const [selectedRepairs, setSelectedRepairs] = useState([]);
     const navigate = useNavigate();
 
     useEffect(() => {
-        // Fetch repair requests
         onValue(ref(db, "คำขอแจ้งซ่อม"), (snapshot) => {
             if (snapshot.exists()) {
                 const data = Object.values(snapshot.val());
@@ -23,7 +23,6 @@ const Dashboard = () => {
             }
         });
 
-        // Fetch topics for mapping รหัสหัวเรื่อง to ชื่อหัวเรื่อง
         onValue(ref(db, "หัวเรื่อง"), (snapshot) => {
             if (snapshot.exists()) {
                 const topicData = snapshot.val();
@@ -36,12 +35,24 @@ const Dashboard = () => {
                 setTopics(topicMap);
             }
         });
+
+        onValue(ref(db, "ผู้ใช้งาน"), (snapshot) => {
+            if (snapshot.exists()) {
+                const userData = snapshot.val();
+                const userMap = {};
+                Object.values(userData).forEach(user => {
+                    if (user["อีเมล"] && user["ชื่อ"]) {
+                        userMap[user["อีเมล"]] = user["ชื่อ"];
+                    }
+                });
+                setUsers(userMap);
+            }
+        });
     }, []);
 
-    // สถิติหัวเรื่องการซ่อม
     const topicStats = repairRequests.reduce((acc, request) => {
         const topicId = request["รหัสหัวเรื่อง"] || "ไม่ระบุ";
-        const room = request["ห้อง"] || request["room"] || "ไม่ระบุ"; // รองรับทั้ง "ห้อง" และ "room"
+        const room = request["ห้อง"] || request["room"] || "ไม่ระบุ";
         if (!acc[topicId]) {
             acc[topicId] = { total: 0, rooms: {} };
         }
@@ -50,44 +61,76 @@ const Dashboard = () => {
         return acc;
     }, {});
 
-    // สถิติห้องที่ซ่อม
     const roomStats = repairRequests.reduce((acc, request) => {
-        const room = request["ห้อง"] || request["room"] || "ไม่ระบุ"; // รองรับทั้ง "ห้อง" และ "room"
+        const room = request["ห้อง"] || request["room"] || "ไม่ระบุ";
         const topicId = request["รหัสหัวเรื่อง"] || "ไม่ระบุ";
-        const detail = request["รายละเอียดคำขอแจ้งซ่อม"] || "ไม่ระบุ";
         if (!acc[room]) {
             acc[room] = { total: 0, topics: {} };
         }
         acc[room].total += 1;
         acc[room].topics[topicId] = (acc[room].topics[topicId] || 0) + 1;
-        acc[room].detail = detail;
         return acc;
     }, {});
 
-    // ฟังก์ชันแปลงรหัสหัวเรื่องเป็นชื่อหัวเรื่อง
+    const statusStats = repairRequests.reduce((acc, request) => {
+        const status = request["สถานะการซ่อม"] || "ไม่ระบุ";
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+    }, {});
+
+    const receiverStats = repairRequests.reduce((acc, request) => {
+        const receiverEmail = request["อีเมลผู้รับเรื่อง"] || "ไม่ระบุ";
+        const receiverName = users[receiverEmail] || receiverEmail;
+        if (!acc[receiverEmail]) {
+            acc[receiverEmail] = { total: 0, name: receiverName };
+        }
+        acc[receiverEmail].total += 1;
+        return acc;
+    }, {});
+
+    const averageRepairTime = repairRequests
+        .filter(req => req["สถานะการซ่อม"] === "ซ่อมสำเร็จ" && req["วันที่เวลาแจ้ง"] && req["วันที่เวลาซ่อมสำเร็จ"])
+        .map(req => {
+            const start = new Date(req["วันที่เวลาแจ้ง"]);
+            const end = new Date(req["วันที่เวลาซ่อมสำเร็จ"]);
+            return (end - start) / (1000 * 60 * 60);
+        })
+        .reduce((sum, time) => sum + time, 0) / (repairRequests.filter(req => req["สถานะการซ่อม"] === "ซ่อมสำเร็จ").length || 1);
+
     const getTopicName = (topicId) => {
         return topics[topicId] || topicId;
     };
 
-    // ข้อมูลสำหรับกราฟหัวเรื่อง (ใช้ชื่อหัวเรื่อง)
-    const topicChartData = Object.keys(topicStats).map(topicId => ({
-        name: getTopicName(topicId),
-        value: topicStats[topicId].total,
+    const statusChartData = Object.keys(statusStats).map(status => ({
+        name: status,
+        value: statusStats[status],
     }));
 
-    // ห้องที่ซ่อมมากที่สุด
+    const roomChartData = Object.keys(roomStats).map(room => ({
+        name: room,
+        value: roomStats[room].total,
+    }));
+
+    const totalRepairs = roomChartData.reduce((sum, room) => sum + room.value, 0);
+
+    const topRooms = roomChartData
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+
     const mostRepairedRoom = Object.keys(roomStats).reduce((maxRoom, room) => {
         return roomStats[room].total > roomStats[maxRoom].total ? room : maxRoom;
     }, Object.keys(roomStats)[0] || "ไม่ระบุ");
 
-    // ฟังก์ชันเปิด Pop-up
+    const mostActiveReceiver = Object.keys(receiverStats).reduce((maxReceiver, receiverEmail) => {
+        return receiverStats[receiverEmail].total > receiverStats[maxReceiver].total ? receiverEmail : maxReceiver;
+    }, Object.keys(receiverStats)[0] || "ไม่ระบุ");
+
     const openPopup = (topicId) => {
         setSelectedTopicId(topicId);
         const repairs = repairRequests.filter(req => req["รหัสหัวเรื่อง"] === topicId);
         setSelectedRepairs(repairs);
     };
 
-    // ฟังก์ชันปิด Pop-up
     const closePopup = () => {
         setSelectedTopicId(null);
         setSelectedRepairs([]);
@@ -97,15 +140,18 @@ const Dashboard = () => {
         if (!selectedRepairs.length) return;
 
         const wsData = [
-            ["ลำดับ", "ชื่อหัวเรื่อง", "หมายเลขครุภัณฑ์", "รายการ", "ห้อง", "วันที่เวลาแจ้ง", "สถานะการซ่อม"],
+            ["ลำดับ", "ชื่อหัวเรื่อง", "หมายเลขครุภัณฑ์", "รายการ", "ห้อง", "รายละเอียดคำขอ", "วันที่เวลาแจ้ง", "สถานะการซ่อม", "วันที่เวลาซ่อมสำเร็จ", "อีเมลผู้รับเรื่อง"],
             ...selectedRepairs.map((item, index) => [
                 index + 1,
                 getTopicName(item["รหัสหัวเรื่อง"]),
                 item["หมายเลขครุภัณฑ์"],
                 item["รายการ"],
-                item["ห้อง"] || item["room"], // รองรับทั้ง "ห้อง" และ "room"
+                item["ห้อง"] || item["room"],
+                item["รายละเอียดคำขอแจ้งซ่อม"],
                 item["วันที่เวลาแจ้ง"],
-                item["สถานะการซ่อม"]
+                item["สถานะการซ่อม"],
+                item["วันที่เวลาซ่อมสำเร็จ"] || "-",
+                item["อีเมลผู้รับเรื่อง"] || "-",
             ]),
         ];
 
@@ -118,13 +164,14 @@ const Dashboard = () => {
         saveAs(dataBlob, `repair_stats_topic_${getTopicName(selectedTopicId)}.xlsx`);
     };
 
-    const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#AF19FF"];
+    const COLORS = ["#FFBB28"];
 
     return (
         <div className="flex min-h-screen bg-pageBG">
-            {/* Sidebar - คงเดิม */}
             <aside className="fixed top-0 left-0 w-64 h-screen text-white p-5 flex flex-col shadow-lg bg-sidebarBG">
-                <h2 className="text-xl font-bold mb-6">ระบบจัดการพัสดุ-ครุภัณฑ์</h2>
+                <div className="flex items-center mb-6">
+                    <h2 className="text-xl font-bold">ระบบจัดการพัสดุ-ครุภัณฑ์</h2>
+                </div>
                 <ul className="space-y-4 flex-1">
                     <li>
                         <Link to="/dashboard" className="flex items-center p-2 rounded-lg bg-sidebarHover hover:bg-sidebarHover w-full text-left">
@@ -157,36 +204,96 @@ const Dashboard = () => {
                 </button>
             </aside>
 
-            {/* Main Content */}
             <div className="ml-64 p-6 w-full">
                 <h1 className="text-2xl font-bold mb-6 text-center">📊 Dashboard - สถิติการแจ้งซ่อม</h1>
 
-                <div className="p-2 bg-gray-300 rounded-lg text-center mt-6">
-                    <strong>ห้องที่ซ่อมมากที่สุด:</strong> {mostRepairedRoom} ({roomStats[mostRepairedRoom]?.total || 0} ครั้ง)
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="p-2 bg-gray-300 rounded-lg text-center">
+                        <strong>ห้องที่ซ่อมมากที่สุด:</strong> {mostRepairedRoom} ({roomStats[mostRepairedRoom]?.total || 0} ครั้ง)
+                    </div>
+                    <div className="p-2 bg-gray-300 rounded-lg text-center">
+                        <strong>ผู้รับเรื่องมากที่สุด:</strong> {receiverStats[mostActiveReceiver]?.name || "ไม่ระบุ"} ({receiverStats[mostActiveReceiver]?.total || 0} ครั้ง)
+                    </div>
+                    <div className="p-2 bg-gray-300 rounded-lg text-center">
+                        <strong>ระยะเวลาเฉลี่ยที่ใช้ในการซ่อม:</strong> {averageRepairTime.toFixed(2)} ชั่วโมง
+                    </div>
                 </div>
 
-                {/* กราฟสถิติหัวเรื่อง */}
-                <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={topicChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Bar dataKey="value" fill="#8884d8">
-                            {topicChartData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                        </Bar>
-                    </BarChart>
-                </ResponsiveContainer>
+                {/* กราฟห้องที่แจ้งซ่อม */}
+                <div className="bg-white p-4 rounded-lg shadow-lg mb-6">
+                    <div className="flex items-start">
+                        <div className="w-3/4">
+                            <div className="flex justify-between items-center mb-2">
+                                <h2 className="text-xl font-semibold">📊 สถิติห้องที่แจ้งซ่อม (2025)</h2>
+                                <span className="text-lg font-semibold">รวม: {totalRepairs} ครั้ง</span>
+                            </div>
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart data={roomChartData} margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
+                                    <XAxis 
+                                        dataKey="name" 
+                                        angle={-45} 
+                                        textAnchor="end" 
+                                        interval={0} 
+                                        height={60} 
+                                        tick={{ fontSize: 12 }}
+                                    />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Bar dataKey="value" fill="#FFBB28" barSize={10}>
+                                        {roomChartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[0]} />
+                                        ))}
+                                        <LabelList dataKey="value" position="top" fill="#000" fontSize={12} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div className="w-1/4 pl-6">
+                            <h3 className="text-lg font-semibold mb-2">ห้อง</h3>
+                            <table className="w-full border-collapse">
+                                <thead>
+                                    <tr>
+                                        <th className="border p-2 text-left">ห้อง</th>
+                                        <th className="border p-2 text-right">จำนวน</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {topRooms.map((room, index) => (
+                                        <tr key={index}>
+                                            <td className="border p-2">{room.name}</td>
+                                            <td className="border p-2 text-right">{room.value}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
 
-                {/* แสดงข้อมูลตามหัวเรื่อง */}
+                {/* กราฟสถานะการซ่อม */}
+                <div className="bg-white p-4 rounded-lg shadow-lg mb-6">
+                    <h2 className="text-xl font-semibold mb-4 text-center">📊 สถิติสถานะการซ่อม</h2>
+                    <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={statusChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <XAxis dataKey="name" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="value" fill="#82ca9d" barSize={30}>
+                                {statusChartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                ))}
+                                <LabelList dataKey="value" position="top" />
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+
                 <div className="grid grid-cols-1 gap-6 mt-6">
                     {Object.keys(topicStats).map((topicId, index) => (
-                        <div key={index} className="bg-white p-4 shadow-lg rounded-lg w-full">
+                        <div key={index} className="bg-white p-4 rounded-lg shadow-lg w-full">
                             <h2 className="text-lg font-semibold mb-4 text-center">📋 หมวดหมู่อุปกรณ์ที่ซ่อม: {getTopicName(topicId)}</h2>
                             <div className="grid grid-cols-2 gap-6">
-                                {/* กราฟห้องที่เกี่ยวข้อง */}
                                 <div>
                                     <h3 className="text-md font-semibold mb-2">🏠 ห้องที่แจ้งซ่อม: {topicStats[topicId].total} ครั้ง</h3>
                                     <ResponsiveContainer width="100%" height={200}>
@@ -202,7 +309,6 @@ const Dashboard = () => {
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
-                                {/* รายละเอียด */}
                                 <div>
                                     <h3 className="text-md font-semibold mb-2">ℹ️ รายละเอียด</h3>
                                     <button
@@ -217,10 +323,9 @@ const Dashboard = () => {
                     ))}
                 </div>
 
-                {/* Pop-up */}
                 {selectedTopicId && (
                     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-                        <div className="bg-white p-6 rounded-lg shadow-lg w-1/2">
+                        <div className="bg-white p-6 rounded-lg shadow-lg w-3/4">
                             <div className="flex justify-between items-center mb-4">
                                 <h2 className="text-lg font-semibold">📋 รายการซ่อม หัวเรื่อง: {getTopicName(selectedTopicId)}</h2>
                                 <button onClick={closePopup} className="text-red-500">
@@ -234,7 +339,9 @@ const Dashboard = () => {
                                         <th className="border border-gray-300 p-2">ห้อง</th>
                                         <th className="border border-gray-300 p-2">สถานะ</th>
                                         <th className="border border-gray-300 p-2">หมายเลขครุภัณฑ์</th>
-                                        <th className="border border-gray-300 p-2">รายการ</th>
+                                        <th className="border border-gray-300 p-2">วันที่เวลาแจ้ง</th>
+                                        <th className="border border-gray-300 p-2">วันที่เวลาซ่อมสำเร็จ</th>
+                                        <th className="border border-gray-300 p-2">อีเมลผู้รับเรื่อง</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -244,7 +351,9 @@ const Dashboard = () => {
                                             <td className="border border-gray-300 p-2">{repair["ห้อง"] || repair["room"]}</td>
                                             <td className="border border-gray-300 p-2">{repair["สถานะการซ่อม"]}</td>
                                             <td className="border border-gray-300 p-2">{repair["หมายเลขครุภัณฑ์"]}</td>
-                                            <td className="border border-gray-300 p-2">{repair["รายการ"]}</td>          
+                                            <td className="border border-gray-300 p-2">{repair["วันที่เวลาแจ้ง"]}</td>
+                                            <td className="border border-gray-300 p-2">{repair["วันที่เวลาซ่อมสำเร็จ"] || "-"}</td>
+                                            <td className="border border-gray-300 p-2">{repair["อีเมลผู้รับเรื่อง"] || "-"}</td>
                                         </tr>
                                     ))}
                                 </tbody>
