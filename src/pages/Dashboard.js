@@ -184,7 +184,7 @@ const Dashboard = () => {
                 <div className="grid grid-cols-1 gap-6 mt-6">
                     {Object.keys(topicStats).map((topicId, index) => (
                         <div key={index} className="bg-white p-4 shadow-lg rounded-lg w-full">
-                            <h2 className="text-lg font-semibold mb-4 text-center">📋 หัวเรื่อง: {getTopicName(topicId)}</h2>
+                            <h2 className="text-lg font-semibold mb-4 text-center">📋 หมวดหมู่อุปกรณ์ที่ซ่อม: {getTopicName(topicId)}</h2>
                             <div className="grid grid-cols-2 gap-6">
                                 {/* กราฟห้องที่เกี่ยวข้อง */}
                                 <div>
