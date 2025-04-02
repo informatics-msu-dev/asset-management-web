@@ -11,13 +11,6 @@ const AdminInfo = () => {
     const [selectedAdmin, setSelectedAdmin] = useState(null);
     const [adminStats, setAdminStats] = useState({});
 
-    // Mapping ชื่อไฟล์กับ File ID ของ Google Drive
-    const profileImageMapping = {
-        "ผู้ใช้งาน_Images/IT-a028.รูปโปรไฟล์.111011.jpg": "ไฟล์IDของIT-a028", // เปลี่ยนเป็น File ID จริง
-        "ผู้ใช้งาน_Images/IT-e64a.รูปโปรไฟล์.111011.jpg": "ไฟล์IDของIT-e64a", // เปลี่ยนเป็น File ID จริง
-        // เพิ่ม mapping สำหรับไฟล์อื่นๆ
-    };
-
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -60,15 +53,6 @@ const AdminInfo = () => {
             }
         });
     }, []);
-
-    // ฟังก์ชันแปลงชื่อไฟล์เป็น URL ของ Google Drive
-    const getProfileImageUrl = (fileName) => {
-        const fileId = profileImageMapping[fileName];
-        if (fileId) {
-            return `https://drive.google.com/uc?export=view&id=${fileId}`;
-        }
-        return null;
-    };
 
     // ฟังก์ชันแปลงรหัสหัวเรื่องเป็นชื่อหัวเรื่อง
     const getTopicName = (topicId) => {
@@ -155,25 +139,6 @@ const AdminInfo = () => {
                             className="p-4 bg-white shadow-lg rounded-lg flex flex-col items-center text-center cursor-pointer hover:bg-gray-200 w-full"
                             onClick={() => openPopup(admin)}
                         >
-                            {/* รูปโปรไฟล์ */}
-                            <div className="w-32 h-32 rounded-full overflow-hidden mb-4">
-                                {admin["รูปโปรไฟล์"] && getProfileImageUrl(admin["รูปโปรไฟล์"]) ? (
-                                    <img
-                                        src={getProfileImageUrl(admin["รูปโปรไฟล์"])}
-                                        alt={`${admin.ชื่อ}'s profile`}
-                                        className="w-full h-full object-cover"
-                                        onError={(e) => {
-                                            e.target.src = "https://via.placeholder.com/128"; // ถ้าโหลดรูปไม่ได้ ใช้ placeholder
-                                            console.error(`Failed to load image for ${admin.ชื่อ}: ${admin["รูปโปรไฟล์"]}`);
-                                        }}
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-500">
-                                        ไม่มีรูปโปรไฟล์
-                                    </div>
-                                )}
-                            </div>
-
                             {/* ชื่อแอดมิน */}
                             <h2 className="mt-3 text-lg font-semibold">{admin.ชื่อ}</h2>
 
